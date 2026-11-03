@@ -1,0 +1,21 @@
+name: fraud_analytics
+version: '1.0.0'
+config-version: 2
+profile: fraud_analytics
+require-dbt-version: [">=1.10.0", "<1.11.0"]
+model-paths: [models]
+test-paths: [tests]
+macro-paths: [macros]
+flags:
+  send_anonymous_usage_stats: false
+vars:
+  "dbt_date:time_zone": UTC
+dispatch:
+  - macro_namespace: dbt_date
+    search_order: [fraud_analytics, dbt_date]
+models:
+  fraud_analytics:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
