@@ -1,0 +1,75 @@
+unit_tests:
+- name: staging_normalizes_and_buckets_boundaries
+  model: stg_transactions
+  description: Checks trimming, case normalization, ISO weekday and all amount bucket boundaries.
+  given:
+  - input: source('raw', 'transactions')
+    rows:
+    - {transaction_time: '2020-01-06 23:00:00', merch: ' fraud_Shop ', cat_id: ' SHOPPING_POS ', amount: 0,
+      name_1: ' Alice ', name_2: ' Smith ', gender: ' f ', street: ' Main St ', one_city: Boston, us_state: ' ma ',
+      post_code: 12345, lat: 42, lon: -71, population_city: 1, jobs: job, merchant_lat: 42.1, merchant_lon: -71.1,
+      target: 0}
+    - {transaction_time: '2020-01-06 23:00:00', merch: ' fraud_Shop ', cat_id: ' SHOPPING_POS ', amount: 99.99,
+      name_1: ' Alice ', name_2: ' Smith ', gender: ' f ', street: ' Main St ', one_city: Boston, us_state: ' ma ',
+      post_code: 12345, lat: 42, lon: -71, population_city: 1, jobs: job, merchant_lat: 42.1, merchant_lon: -71.1,
+      target: 0}
+    - {transaction_time: '2020-01-06 23:00:00', merch: ' fraud_Shop ', cat_id: ' SHOPPING_POS ', amount: 100,
+      name_1: ' Alice ', name_2: ' Smith ', gender: ' f ', street: ' Main St ', one_city: Boston, us_state: ' ma ',
+      post_code: 12345, lat: 42, lon: -71, population_city: 1, jobs: job, merchant_lat: 42.1, merchant_lon: -71.1,
+      target: 0}
+    - {transaction_time: '2020-01-06 23:00:00', merch: ' fraud_Shop ', cat_id: ' SHOPPING_POS ', amount: 999.99,
+      name_1: ' Alice ', name_2: ' Smith ', gender: ' f ', street: ' Main St ', one_city: Boston, us_state: ' ma ',
+      post_code: 12345, lat: 42, lon: -71, population_city: 1, jobs: job, merchant_lat: 42.1, merchant_lon: -71.1,
+      target: 0}
+    - {transaction_time: '2020-01-06 23:00:00', merch: ' fraud_Shop ', cat_id: ' SHOPPING_POS ', amount: 1000,
+      name_1: ' Alice ', name_2: ' Smith ', gender: ' f ', street: ' Main St ', one_city: Boston, us_state: ' ma ',
+      post_code: 12345, lat: 42, lon: -71, population_city: 1, jobs: job, merchant_lat: 42.1, merchant_lon: -71.1,
+      target: 0}
+  expect:
+    rows:
+    - {amount: 0, amount_bucket: SMALL, merchant: fraud_Shop, category: shopping_pos, gender: F, us_state: MA,
+      day_of_week: 1, transaction_hour: 23, is_fraud: 0}
+    - {amount: 99.99, amount_bucket: SMALL, merchant: fraud_Shop, category: shopping_pos, gender: F, us_state: MA,
+      day_of_week: 1, transaction_hour: 23, is_fraud: 0}
+    - {amount: 100, amount_bucket: MEDIUM, merchant: fraud_Shop, category: shopping_pos, gender: F, us_state: MA,
+      day_of_week: 1, transaction_hour: 23, is_fraud: 0}
+    - {amount: 999.99, amount_bucket: MEDIUM, merchant: fraud_Shop, category: shopping_pos, gender: F,
+      us_state: MA, day_of_week: 1, transaction_hour: 23, is_fraud: 0}
+    - {amount: 1000, amount_bucket: LARGE, merchant: fraud_Shop, category: shopping_pos, gender: F, us_state: MA,
+      day_of_week: 1, transaction_hour: 23, is_fraud: 0}
+- name: daily_metrics_aggregate_and_keep_states_separate
+  model: mart_daily_state_metrics
+  given:
+  - input: ref('stg_transactions')
+    rows:
+    - {transaction_date: '2020-01-06', us_state: MA, amount: 10, amount_bucket: SMALL}
+    - {transaction_date: '2020-01-06', us_state: MA, amount: 1000, amount_bucket: LARGE}
+    - {transaction_date: '2020-01-06', us_state: NY, amount: 100, amount_bucket: MEDIUM}
+  expect:
+    rows:
+    - {transaction_date: '2020-01-06', us_state: MA, transaction_count: 2, total_amount: 1010, average_amount: 505,
+      p95_amount: 1000, large_transaction_share: 0.5}
+    - {transaction_date: '2020-01-06', us_state: NY, transaction_count: 1, total_amount: 100, average_amount: 100,
+      p95_amount: 100, large_transaction_share: 0}
+- name: customer_risk_thresholds
+  model: mart_customer_risk_profile
+  given:
+  - input: ref('stg_transactions')
+    format: sql
+    rows: |
+      select
+          customer_id,
+          toDateTime('2020-01-06 12:00:00') as transaction_time,
+          cast(10 as Decimal(18, 2)) as amount,
+          toUInt8(number < frauds) as is_fraud
+      from numbers(100) as transactions
+      cross join (
+          select 'clean' as customer_id, 0 as frauds
+          union all select 'medium', 1
+          union all select 'high', 5
+      ) as customers
+  expect:
+    rows:
+    - {customer_id: clean, fraud_rate: 0, risk_level: LOW, transaction_count: 100}
+    - {customer_id: medium, fraud_rate: 1, risk_level: MEDIUM, transaction_count: 100}
+    - {customer_id: high, fraud_rate: 5, risk_level: HIGH, transaction_count: 100}

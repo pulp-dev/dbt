@@ -1,0 +1,7 @@
+.venv/
+.runtime/
+data/
+__pycache__/
+dbt/dbt_packages/
+dbt/target/
+dbt/logs/

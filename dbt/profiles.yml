@@ -1,0 +1,16 @@
+fraud_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      host: "{{ env_var('CLICKHOUSE_HOST', 'localhost') }}"
+      port: 8123
+      user: "{{ env_var('CLICKHOUSE_USER', 'user') }}"
+      password: "{{ env_var('CLICKHOUSE_PASSWORD', 'password') }}"
+      schema: analytics_dbt
+      database_engine: Ordinary
+      secure: false
+      threads: 2
+      custom_settings:
+        join_use_nulls: 1
+        allow_deprecated_database_ordinary: 1

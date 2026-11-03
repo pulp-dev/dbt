@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.5.0
+    hooks:
+      - id: sqlfluff-lint
+        additional_dependencies: [sqlfluff-templater-dbt==4.5.0, dbt-clickhouse==1.9.8, dbt-core==1.10.23]
+        args: [--config, .sqlfluff]
+        files: ^dbt/.*\.sql$
+      - id: sqlfluff-fix
+        additional_dependencies: [sqlfluff-templater-dbt==4.5.0, dbt-clickhouse==1.9.8, dbt-core==1.10.23]
+        args: [--config, .sqlfluff]
+        files: ^dbt/.*\.sql$

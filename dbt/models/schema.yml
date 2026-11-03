@@ -1,0 +1,301 @@
+version: 2
+sources:
+- name: raw
+  schema: transactions_db
+  description: Read-only raw transactions loaded from the hw2 training dataset.
+  tables:
+  - name: transactions
+    description: One row per source transaction, including observed fraud target. No transaction ID is
+      supplied.
+    columns:
+    - name: transaction_time
+      description: Transaction timestamp. Original dataset wall time, without timezone conversion.
+    - name: merch
+      description: Original merchant name.
+    - name: cat_id
+      description: Original category.
+    - name: amount
+      description: Transaction amount in dataset currency, stored as Decimal(18, 2).
+    - name: name_1
+      description: Original customer or merchant attribute from hw2.
+    - name: name_2
+      description: Original customer or merchant attribute from hw2.
+    - name: gender
+      description: 'Uppercase customer gender: F or M.'
+    - name: street
+      description: Original customer or merchant attribute from hw2.
+    - name: one_city
+      description: Original customer or merchant attribute from hw2.
+    - name: us_state
+      description: Uppercase US state or district code from the dataset.
+    - name: post_code
+      description: Original customer or merchant attribute from hw2.
+    - name: lat
+      description: Original customer or merchant attribute from hw2.
+    - name: lon
+      description: Original customer or merchant attribute from hw2.
+    - name: population_city
+      description: Original customer or merchant attribute from hw2.
+    - name: jobs
+      description: Original customer or merchant attribute from hw2.
+    - name: merchant_lat
+      description: Original customer or merchant attribute from hw2.
+    - name: merchant_lon
+      description: Original customer or merchant attribute from hw2.
+    - name: target
+      description: Fraud target, 0 or 1.
+models:
+- name: stg_transactions
+  description: Normalized transactions. Source rows are preserved; invalid amounts and labels fail tests.
+  columns:
+  - name: transaction_time
+    description: Transaction timestamp. Original dataset wall time, without timezone conversion.
+    data_tests: [not_null]
+  - name: merchant
+    description: Trimmed merchant name. The fraud_ prefix is part of the name, not a fraud label.
+    data_tests: [not_null]
+  - name: category
+    description: Lowercase transaction category.
+    data_tests: [not_null]
+  - name: amount
+    description: Transaction amount in dataset currency, stored as Decimal(18, 2).
+    data_tests:
+    - not_null
+    - dbt_expectations.expect_column_values_to_be_between:
+        arguments:
+          min_value: 0
+  - name: customer_id
+    description: MD5 of normalized first name, surname, street and postal code. A customer proxy, not
+      a bank identifier.
+    data_tests: [not_null]
+  - name: gender
+    description: 'Uppercase customer gender: F or M.'
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: [F, M]
+  - name: us_state
+    description: Uppercase US state or district code from the dataset.
+    data_tests: [not_null]
+  - name: latitude
+    description: Customer latitude in degrees.
+    data_tests: [not_null]
+  - name: longitude
+    description: Customer longitude in degrees.
+    data_tests: [not_null]
+  - name: merchant_latitude
+    description: Merchant latitude in degrees.
+    data_tests: [not_null]
+  - name: merchant_longitude
+    description: Merchant longitude in degrees.
+    data_tests: [not_null]
+  - name: is_fraud
+    description: 'Observed fraud label: 1 for fraud, 0 otherwise.'
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: [0, 1]
+  - name: transaction_date
+    description: Calendar date in source wall time.
+    data_tests: [not_null]
+  - name: transaction_hour
+    description: Hour in source wall time, from 0 to 23.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: &id002 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+            22, 23]
+  - name: day_of_week
+    description: 'ISO weekday: Monday is 1 and Sunday is 7.'
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: &id001 [1, 2, 3, 4, 5, 6, 7]
+  - name: amount_bucket
+    description: SMALL below 100, MEDIUM from 100 to below 1000, LARGE from 1000.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: [SMALL, MEDIUM, LARGE]
+- name: mart_daily_state_metrics
+  description: Daily transaction activity by state.
+  columns:
+  - name: transaction_date
+    description: Calendar date in source wall time.
+    data_tests: [not_null]
+  - name: us_state
+    description: Uppercase US state or district code from the dataset.
+    data_tests: [not_null]
+  - name: transaction_count
+    description: Number of transactions in the group.
+    data_tests: [not_null]
+  - name: total_amount
+    description: Sum of all transaction amounts in dataset currency.
+    data_tests: [not_null]
+  - name: average_amount
+    description: Mean transaction amount in dataset currency.
+    data_tests: [not_null]
+  - name: p95_amount
+    description: Exact 95th percentile of transaction amounts.
+    data_tests: [not_null]
+  - name: large_transaction_share
+    description: Fraction of transactions with amount at least 1000, from 0 to 1.
+    data_tests: [not_null]
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns: [transaction_date, us_state]
+- name: mart_fraud_by_category
+  description: Category fraud rates. Order by fraud_rate descending to identify the highest risk.
+  columns:
+  - name: category
+    description: Lowercase transaction category.
+    data_tests: [not_null, unique]
+  - name: transaction_count
+    description: Number of transactions in the group.
+    data_tests: [not_null]
+  - name: fraud_count
+    description: Number of transactions labeled as fraud.
+    data_tests: [not_null]
+  - name: fraud_rate
+    description: Fraudulent transactions as a percentage of all transactions, from 0 to 100.
+    data_tests: [not_null]
+  - name: total_amount
+    description: Sum of all transaction amounts in dataset currency.
+    data_tests: [not_null]
+  - name: fraud_amount
+    description: Sum of transaction amounts labeled as fraud.
+    data_tests: [not_null]
+- name: mart_fraud_by_state
+  description: Geographic fraud distribution, customer and merchant coverage.
+  columns:
+  - name: us_state
+    description: Uppercase US state or district code from the dataset.
+    data_tests: [not_null, unique]
+  - name: transaction_count
+    description: Number of transactions in the group.
+    data_tests: [not_null]
+  - name: fraud_count
+    description: Number of transactions labeled as fraud.
+    data_tests: [not_null]
+  - name: fraud_rate
+    description: Fraudulent transactions as a percentage of all transactions, from 0 to 100.
+    data_tests: [not_null]
+  - name: unique_customers
+    description: Exact number of distinct customer proxies.
+    data_tests: [not_null]
+  - name: unique_merchants
+    description: Exact number of distinct trimmed merchant names.
+    data_tests: [not_null]
+  - name: total_amount
+    description: Sum of all transaction amounts in dataset currency.
+    data_tests: [not_null]
+  - name: fraud_amount
+    description: Sum of transaction amounts labeled as fraud.
+    data_tests: [not_null]
+- name: mart_customer_risk_profile
+  description: 'Retrospective customer history and risk. Not a predictive model: uses observed fraud labels.'
+  columns:
+  - name: customer_id
+    description: MD5 of normalized first name, surname, street and postal code. A customer proxy, not
+      a bank identifier.
+    data_tests: [not_null, unique]
+  - name: first_transaction_time
+    description: First observed customer transaction.
+    data_tests: [not_null]
+  - name: last_transaction_time
+    description: Last observed customer transaction.
+    data_tests: [not_null]
+  - name: transaction_count
+    description: Number of transactions in the group.
+    data_tests: [not_null]
+  - name: fraud_count
+    description: Number of transactions labeled as fraud.
+    data_tests: [not_null]
+  - name: fraud_rate
+    description: Fraudulent transactions as a percentage of all transactions, from 0 to 100.
+    data_tests: [not_null]
+  - name: total_amount
+    description: Sum of all transaction amounts in dataset currency.
+    data_tests: [not_null]
+  - name: average_amount
+    description: Mean transaction amount in dataset currency.
+    data_tests: [not_null]
+  - name: risk_level
+    description: HIGH at fraud_rate >= 5 percent, MEDIUM at >= 1 percent, otherwise LOW.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: [HIGH, MEDIUM, LOW]
+- name: mart_hourly_fraud_pattern
+  description: Fraud by ISO weekday and hour in source wall time. Risk threshold is a homework heuristic.
+  columns:
+  - name: day_of_week
+    description: 'ISO weekday: Monday is 1 and Sunday is 7.'
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: *id001
+  - name: transaction_hour
+    description: Hour in source wall time, from 0 to 23.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: *id002
+  - name: transaction_count
+    description: Number of transactions in the group.
+    data_tests: [not_null]
+  - name: fraud_count
+    description: Number of transactions labeled as fraud.
+    data_tests: [not_null]
+  - name: fraud_rate
+    description: Fraudulent transactions as a percentage of all transactions, from 0 to 100.
+    data_tests: [not_null]
+  - name: total_amount
+    description: Sum of all transaction amounts in dataset currency.
+    data_tests: [not_null]
+  - name: fraud_amount
+    description: Sum of transaction amounts labeled as fraud.
+    data_tests: [not_null]
+  - name: is_high_risk_window
+    description: True when weekday and hour fraud_rate is at least 1 percent.
+    data_tests: [not_null]
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns: [day_of_week, transaction_hour]
+- name: mart_merchant_analytics
+  description: Merchant turnover and observed fraud. Suspicion thresholds are homework heuristics.
+  columns:
+  - name: merchant
+    description: Trimmed merchant name. The fraud_ prefix is part of the name, not a fraud label.
+    data_tests: [not_null, unique]
+  - name: transaction_count
+    description: Number of transactions in the group.
+    data_tests: [not_null]
+  - name: fraud_count
+    description: Number of transactions labeled as fraud.
+    data_tests: [not_null]
+  - name: fraud_rate
+    description: Fraudulent transactions as a percentage of all transactions, from 0 to 100.
+    data_tests: [not_null]
+  - name: total_amount
+    description: Sum of all transaction amounts in dataset currency.
+    data_tests: [not_null]
+  - name: fraud_amount
+    description: Sum of transaction amounts labeled as fraud.
+    data_tests: [not_null]
+  - name: unique_customers
+    description: Exact number of distinct customer proxies.
+    data_tests: [not_null]
+  - name: is_suspicious
+    description: True when merchant fraud_rate >= 1 percent and fraud_count >= 5.
+    data_tests: [not_null]
